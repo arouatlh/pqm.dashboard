@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PQM 1000s Dashboard</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .dark-mode {
+            background: #1c1d47;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            transition: background 0.3s;
+        }
+
+        .dark-mode .container {
+            background: #0e0325;
+        }
+
+        h1 {
+            text-align: center;
+            color: #3b82f6;
+        }
+
+        .dark-mode h1 {
+            color: #60a5fa;
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #3b82f6;
+            color: white;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        #pauseBtn {
+            background: #f59e0b;
+        }
+
+        #pauseBtn:hover {
+            background: #d97706;
+        }
+
+        .alert {
+            color: red;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .dark-mode .alert {
+            color: #ff6b6b;
+        }
+
+        .metrics {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .metrics p {
+            margin: 0;
+            font-size: 1.2em;
+            padding: 10px;
+            border-radius: 5px;
+            background: #e0f2fe;
+            transition: background 0.3s;
+        }
+
+        .dark-mode .metrics p {
+            background: #080324;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+        }
+
+        canvas {
+            width: 90% !important;
+            height: 290px !important;
+        }
+
+        .timestamp {
+            text-align: center;
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .dark-mode .timestamp {
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔋 PQM 1000s Dashboard</h1>
+        <div class="controls">
+            <button id="pauseBtn">Pause Updates</button>
+            <button id="exportBtn">Export to CSV</button>
+            <button id="darkModeBtn">Toggle Dark Mode</button>
+        </div>
+        <div id="alert" class="alert">⚠️ Alert: Threshold exceeded!</div>
+        <div class="metrics">
+            <p><strong>Voltage:</strong> <span id="voltage">--</span> V</p>
+            <p><strong>Current:</strong> <span id="current">--</span> A</p>
+            <p><strong>Power:</strong> <span id="power">--</span> W/kW</p>
+        </div>
+        <div class="chart-container">
+            <canvas id="chart" aria-label="Live chart of Voltage, Current, and Power metrics"></canvas>
+        </div>
+        <div class="timestamp">Last Update: <span id="lastUpdate">--</span></div>
+    </div>
+
+    <script>
+        // Dark mode toggle
+        const darkModeBtn = document.getElementById('darkModeBtn');
+        darkModeBtn.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+        });
+
+// Function to play a simple beep alarm (now louder and more annoying)
+function playAlarmBeep() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.setValueAtTime(2000, audioContext.currentTime); // Higher frequency for shriller pitch (annoying)
+    oscillator.type = 'square'; // Harsh, buzzy waveform for more annoying sound
+
+    gainNode.gain.setValueAtTime(0.8, audioContext.currentTime); // Louder volume
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5); // Fade out
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5); // Duration: 0.5 seconds
+}
+
+        // Initialize Chart.js with multi-axis
+        const ctx = document.getElementById('chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Voltage (V)',
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.1)',
+                        data: [],
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y-voltage'
+                    },
+                    {
+                        label: 'Current (A)',
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34,197,94,0.1)',
+                        data: [],
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y-current'
+                    },
+                    {
+                        label: 'Power (W)',
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245,158,11,0.1)',
+                        data: [],
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y-power'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: { duration: 500 },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Time' } },
+                    'y-voltage': { type: 'linear', position: 'left', title: { display: true, text: 'Voltage (V)' }, beginAtZero: true },
+                    'y-current': { type: 'linear', position: 'right', title: { display: true, text: 'Current (A) / Power (W)' }, beginAtZero: true, grid: { drawOnChartArea: false } },
+                    'y-power': { type: 'linear', position: 'right', display: false }
+                }
+            }
+        });
+
+        // Pause/Resume functionality
+        let isPaused = false;
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? 'Resume Updates' : 'Pause Updates';
+        });
+
+        // Export to CSV
+        const exportBtn = document.getElementById('exportBtn');
+        exportBtn.addEventListener('click', () => {
+            const csvContent = 'data:text/csv;charset=utf-8,Time,Voltage (V),Current (A),Power (W)\n' +
+                chart.data.labels.map((label, i) => `${label},${chart.data.datasets[0].data[i]},${chart.data.datasets[1].data[i]},${chart.data.datasets[2].data[i]}`).join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'pqm_data.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // Track if alert is currently active to avoid repeated beeps
+        let alertActive = false;
+
+        // Simulate live data
+        function updateMetrics() {
+            if (isPaused) return;
+
+            const voltage = parseFloat((210 + Math.random() * 30).toFixed(1));
+            const current = parseFloat((Math.random() * 20).toFixed(2));
+            const power = parseFloat((voltage * current * (0.8 + Math.random() * 0.2)).toFixed(0));
+            const timestamp = new Date().toLocaleTimeString();
+
+            // Update text display
+            document.getElementById("voltage").textContent = voltage;
+            document.getElementById("current").textContent = current;
+            document.getElementById("power").textContent = power;
+            document.getElementById("lastUpdate").textContent = timestamp;
+
+            // Check thresholds and show alert + alarm
+            const alertDiv = document.getElementById('alert');
+            const thresholdExceeded = voltage > 230 || current > 15 || power > 4000;
+            if (thresholdExceeded) {
+                alertDiv.style.display = 'block';
+                if (!alertActive) {
+                    playAlarmBeep(); // Play beep only once per alert cycle
+                    alertActive = true;
+                }
+            } else {
+                alertDiv.style.display = 'none';
+                alertActive = false;
+            }
+
+            // Update chart
+            chart.data.labels.push(timestamp);
+            chart.data.datasets[0].data.push(voltage);
+            chart.data.datasets[1].data.push(current);
+            chart.data.datasets[2].data.push(power);
+
+            // Keep only last 20 data points
+            if (chart.data.labels.length > 20) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+
+            chart.update();
+        }
+
+        // Initial call and interval
+        updateMetrics();
+        setInterval(updateMetrics, 3000);
+    </script>
+</body>
+</html>
